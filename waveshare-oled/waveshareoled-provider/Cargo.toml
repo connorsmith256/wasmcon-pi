@@ -9,9 +9,7 @@ anyhow = "1.0"
 async-trait = "0.1"
 futures = "0.3"
 rand = "0.8"
-rppal = "0.14"
 serde = {version = "1.0", features = ["derive"] }
-spidev = "0.6"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1.37"
 wasmbus-rpc = { version = "0.14", features = ["otel"] }
