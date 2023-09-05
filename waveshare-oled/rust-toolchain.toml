@@ -1,0 +1,4 @@
+[toolchain]
+targets = [
+    "aarch64-unknown-linux-musl",
+]

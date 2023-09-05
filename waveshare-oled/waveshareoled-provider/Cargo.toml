@@ -2,22 +2,17 @@
 name = "waveshareoled-provider"
 version = "0.1.0"
 edition = "2021"
-resolver = "2"
 
 [dependencies]
-anyhow = "1.0"
-async-trait = "0.1"
-futures = "0.3"
-rand = "0.8"
-serde = {version = "1.0", features = ["derive"] }
-tokio = { version = "1", features = ["full"] }
-tracing = "0.1.37"
-wasmbus-rpc = { version = "0.14", features = ["otel"] }
-waveshareoled-interface = {version = "0.1", path = "/Users/connor/Documents/scratch/pi/waveshare-oled/waveshareoled-interface/rust"}
-
-# test dependencies
-[dev-dependencies]
-wasmcloud-test-util = "0.9"
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+wasmbus-rpc = { workspace = true }
+waveshareoled-interface = { workspace = true }
 
 [[bin]]
 name = "waveshareoled_provider"

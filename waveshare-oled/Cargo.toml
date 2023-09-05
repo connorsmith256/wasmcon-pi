@@ -1,0 +1,33 @@
+[workspace.package]
+authors = ["The wasmCloud Team"]
+categories = ["wasm"]
+edition = "2021"
+license = "Apache-2.0"
+
+[workspace]
+members = [
+    "waveshareoled-actor",
+    "waveshareoled-interface/rust",
+    "waveshareoled-provider",
+]
+
+[workspace.dependencies]
+anyhow = "1"
+async-trait = "0.1"
+base64 = "0.13"
+futures = "0.3"
+rand = "0.8"
+serde = { version = "1", features = ["derive"] }
+serde_bytes = "0.11"
+serde_json ="1.0"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+wasmbus-rpc = { version = "0.14", features = ["otel"] }
+wasmcloud-interface-httpserver = "0.11"
+waveshareoled-interface = { version = "0.1", path = "./waveshareoled-interface/rust"}
+weld-codegen = "0.7"
+
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
