@@ -14,10 +14,9 @@ tokio = { version = "1", features = ["full"] }
 tracing = "0.1.37"
 wasmbus-rpc = { version = "0.14", features = ["otel"] }
 waveshareoled-interface = { version = "0.1", path = "../waveshareoled-interface/rust" }
-
-# test dependencies
-[dev-dependencies]
-wasmcloud-test-util = "0.9"
+embedded-graphics = "0.8"
+rppal = { version = "0.14", features = ["hal"] }
+sh1106 = "0.5"
 
 [[bin]]
 name = "waveshareoled_provider"
