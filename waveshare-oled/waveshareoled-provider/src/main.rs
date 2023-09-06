@@ -6,6 +6,11 @@ use std::convert::Infallible;
 use std::sync::Arc;
 
 use anyhow::{anyhow, ensure, Context as _};
+use embedded_graphics::mono_font::{ascii, MonoTextStyleBuilder};
+use embedded_graphics::pixelcolor::BinaryColor;
+use embedded_graphics::prelude::Point;
+use embedded_graphics::text::{Baseline, Text};
+use embedded_graphics::Drawable;
 use futures::try_join;
 use rppal::gpio::{Gpio, OutputPin, Trigger};
 use rppal::hal::Delay;
@@ -119,7 +124,7 @@ async fn main() -> anyhow::Result<()> {
         &mut js_press,
     ] {
         pin.set_interrupt(Trigger::RisingEdge)
-            .context("failed to set interrupt on BTN1")?;
+            .context("failed to set interrupt")?;
     }
 
     let (event_tx, _) = broadcast::channel(1000);
@@ -136,6 +141,7 @@ async fn main() -> anyhow::Result<()> {
                 )
                 .context("failed to poll")?
                 .context("poll returned unexpectedly")?;
+            // TODO: Debounce
             let event = if pin == btn1 {
                 WrappedEvent::Button1Press
             } else if pin == btn2 {
@@ -162,10 +168,20 @@ async fn main() -> anyhow::Result<()> {
 
     let (display_tx, mut display_rx) = mpsc::channel(1000);
     let display_handle: JoinHandle<anyhow::Result<()>> = spawn(async move {
+        let text_style = MonoTextStyleBuilder::new()
+            .font(&ascii::FONT_5X8)
+            .text_color(BinaryColor::On)
+            .build();
         loop {
             match display_rx.recv().await.context("display channel closed")? {
-                DisplayCommand::Clear => todo!(),
-                DisplayCommand::Text(_text) => todo!(),
+                DisplayCommand::Clear => display.clear(),
+                DisplayCommand::Text(text) => {
+                    display.clear();
+                    Text::with_baseline(&text, Point::zero(), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .context("failed to write text")?;
+                    display.flush().expect("failed to flush");
+                }
             }
         }
     });
@@ -234,7 +250,7 @@ impl ProviderHandler for WaveshareoledProvider {
                 loop {
                     match events.recv().await {
                         Ok(evt) => {
-                            debug!("Received event: {:?}", evt);
+                            debug!("Received event: {evt:?}");
 
                             if let Err(e) = sender
                                 .handle_event(&default_context, &evt.to_string())
