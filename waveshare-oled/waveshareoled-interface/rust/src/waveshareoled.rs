@@ -90,11 +90,126 @@ pub fn decode_draw_message_input(
     };
     Ok(__result)
 }
+pub type Event = String;
+
+// Encode Event as CBOR and append to output stream
+#[doc(hidden)]
+#[allow(unused_mut)]
+pub fn encode_event<W: wasmbus_rpc::cbor::Write>(
+    mut e: &mut wasmbus_rpc::cbor::Encoder<W>,
+    val: &Event,
+) -> RpcResult<()>
+where
+    <W as wasmbus_rpc::cbor::Write>::Error: std::fmt::Display,
+{
+    e.str(val)?;
+    Ok(())
+}
+
+// Decode Event from cbor input stream
+#[doc(hidden)]
+pub fn decode_event(d: &mut wasmbus_rpc::cbor::Decoder<'_>) -> Result<Event, RpcError> {
+    let __result = { d.str()?.to_string() };
+    Ok(__result)
+}
+/// wasmbus.contractId: cosmonic:waveshareoled
+/// wasmbus.actorReceive
+#[async_trait]
+pub trait WaveshareSubscriber {
+    /// returns the capability contract id for this interface
+    fn contract_id() -> &'static str {
+        "cosmonic:waveshareoled"
+    }
+    async fn handle_event(&self, ctx: &Context, arg: &Event) -> RpcResult<()>;
+}
+
+/// WaveshareSubscriberReceiver receives messages defined in the WaveshareSubscriber service trait
+#[doc(hidden)]
+#[async_trait]
+pub trait WaveshareSubscriberReceiver: MessageDispatch + WaveshareSubscriber {
+    async fn dispatch(&self, ctx: &Context, message: Message<'_>) -> Result<Vec<u8>, RpcError> {
+        match message.method {
+            "HandleEvent" => {
+                let value: Event = wasmbus_rpc::common::deserialize(&message.arg)
+                    .map_err(|e| RpcError::Deser(format!("'Event': {}", e)))?;
+
+                let _resp = WaveshareSubscriber::handle_event(self, ctx, &value).await?;
+                let buf = Vec::new();
+                Ok(buf)
+            }
+            _ => Err(RpcError::MethodNotHandled(format!(
+                "WaveshareSubscriber::{}",
+                message.method
+            ))),
+        }
+    }
+}
+
+/// WaveshareSubscriberSender sends messages to a WaveshareSubscriber service
+/// client for sending WaveshareSubscriber messages
+#[derive(Clone, Debug)]
+pub struct WaveshareSubscriberSender<T: Transport> {
+    transport: T,
+}
+
+impl<T: Transport> WaveshareSubscriberSender<T> {
+    /// Constructs a WaveshareSubscriberSender with the specified transport
+    pub fn via(transport: T) -> Self {
+        Self { transport }
+    }
+
+    pub fn set_timeout(&self, interval: std::time::Duration) {
+        self.transport.set_timeout(interval);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl<'send> WaveshareSubscriberSender<wasmbus_rpc::provider::ProviderTransport<'send>> {
+    /// Constructs a Sender using an actor's LinkDefinition,
+    /// Uses the provider's HostBridge for rpc
+    pub fn for_actor(ld: &'send wasmbus_rpc::core::LinkDefinition) -> Self {
+        Self {
+            transport: wasmbus_rpc::provider::ProviderTransport::new(ld, None),
+        }
+    }
+}
+#[cfg(target_arch = "wasm32")]
+impl WaveshareSubscriberSender<wasmbus_rpc::actor::prelude::WasmHost> {
+    /// Constructs a client for actor-to-actor messaging
+    /// using the recipient actor's public key
+    pub fn to_actor(actor_id: &str) -> Self {
+        let transport =
+            wasmbus_rpc::actor::prelude::WasmHost::to_actor(actor_id.to_string()).unwrap();
+        Self { transport }
+    }
+}
+#[async_trait]
+impl<T: Transport + std::marker::Sync + std::marker::Send> WaveshareSubscriber
+    for WaveshareSubscriberSender<T>
+{
+    #[allow(unused)]
+    async fn handle_event(&self, ctx: &Context, arg: &Event) -> RpcResult<()> {
+        let buf = wasmbus_rpc::common::serialize(arg)?;
+
+        let resp = self
+            .transport
+            .send(
+                ctx,
+                Message {
+                    method: "WaveshareSubscriber.HandleEvent",
+                    arg: Cow::Borrowed(&buf),
+                },
+                None,
+            )
+            .await?;
+        Ok(())
+    }
+}
+
 /// The Waveshareoled service has a single method, calculate, which
 /// calculates the factorial of its whole number parameter.
 /// wasmbus.contractId: cosmonic:waveshareoled
 /// wasmbus.providerReceive
-/// wasmbus.actorReceive
 #[async_trait]
 pub trait Waveshareoled {
     /// returns the capability contract id for this interface
@@ -103,6 +218,7 @@ pub trait Waveshareoled {
     }
     /// Draws the given message on the OLED display
     async fn draw_message(&self, ctx: &Context, arg: &DrawMessageInput) -> RpcResult<()>;
+    async fn clear(&self, ctx: &Context) -> RpcResult<()>;
 }
 
 /// WaveshareoledReceiver receives messages defined in the Waveshareoled service trait
@@ -118,6 +234,11 @@ pub trait WaveshareoledReceiver: MessageDispatch + Waveshareoled {
                     .map_err(|e| RpcError::Deser(format!("'DrawMessageInput': {}", e)))?;
 
                 let _resp = Waveshareoled::draw_message(self, ctx, &value).await?;
+                let buf = Vec::new();
+                Ok(buf)
+            }
+            "Clear" => {
+                let _resp = Waveshareoled::clear(self, ctx).await?;
                 let buf = Vec::new();
                 Ok(buf)
             }
@@ -146,27 +267,6 @@ impl<T: Transport> WaveshareoledSender<T> {
 
     pub fn set_timeout(&self, interval: std::time::Duration) {
         self.transport.set_timeout(interval);
-    }
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-impl<'send> WaveshareoledSender<wasmbus_rpc::provider::ProviderTransport<'send>> {
-    /// Constructs a Sender using an actor's LinkDefinition,
-    /// Uses the provider's HostBridge for rpc
-    pub fn for_actor(ld: &'send wasmbus_rpc::core::LinkDefinition) -> Self {
-        Self {
-            transport: wasmbus_rpc::provider::ProviderTransport::new(ld, None),
-        }
-    }
-}
-#[cfg(target_arch = "wasm32")]
-impl WaveshareoledSender<wasmbus_rpc::actor::prelude::WasmHost> {
-    /// Constructs a client for actor-to-actor messaging
-    /// using the recipient actor's public key
-    pub fn to_actor(actor_id: &str) -> Self {
-        let transport =
-            wasmbus_rpc::actor::prelude::WasmHost::to_actor(actor_id.to_string()).unwrap();
-        Self { transport }
     }
 }
 
@@ -206,6 +306,22 @@ impl<T: Transport + std::marker::Sync + std::marker::Send> Waveshareoled
                 ctx,
                 Message {
                     method: "Waveshareoled.DrawMessage",
+                    arg: Cow::Borrowed(&buf),
+                },
+                None,
+            )
+            .await?;
+        Ok(())
+    }
+    #[allow(unused)]
+    async fn clear(&self, ctx: &Context) -> RpcResult<()> {
+        let buf = *b"";
+        let resp = self
+            .transport
+            .send(
+                ctx,
+                Message {
+                    method: "Waveshareoled.Clear",
                     arg: Cow::Borrowed(&buf),
                 },
                 None,

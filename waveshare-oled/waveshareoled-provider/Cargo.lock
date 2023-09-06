@@ -2861,6 +2861,7 @@ dependencies = [
 name = "waveshareoled-interface"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "async-trait",
  "serde",
  "serde_bytes",

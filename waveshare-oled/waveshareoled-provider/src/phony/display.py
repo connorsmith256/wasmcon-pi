@@ -11,6 +11,7 @@ from PIL import Image,ImageDraw,ImageFont
 
 import numpy as np
 import sys
+from enum import Enum
 
 LCD_WIDTH   = 128 #LCD width
 LCD_HEIGHT  = 64  #LCD height
@@ -20,6 +21,14 @@ RST_PIN         = 25
 DC_PIN          = 24
 CS_PIN          = 8
 BL_PIN          = 18
+JS_UP_PIN = 6  #Joystick Up
+JS_DOWN_PIN = 19 #Joystick Down
+JS_LEFT_PIN = 5  #Joystick Left
+JS_RIGHT_PIN = 26 #Joystick Right
+JS_PRESSED_PIN = 13 #Joystick Pressed
+BTN1_PIN = 21
+BTN2_PIN = 20
+BTN3_PIN = 16
 
 Device_SPI = 1
 Device_I2C = 0
@@ -47,6 +56,42 @@ def spi_writebyte(data):
 
 def i2c_writebyte(reg, value):
     bus.write_byte_data(address, reg, value)
+
+# Event handling functions
+
+class Event(Enum):
+    BTN1_PRESS = "button1"
+    BTN2_PRESS = "button2"
+    BTN3_PRESS = "button3"
+    JS_UP = "joystick_up"
+    JS_DOWN = "joystick_down"
+    JS_LEFT = "joystick_left"
+    JS_RIGHT = "joystick_right"
+    JS_PRESSED = "joystick_pressed"
+
+def b1_press(_channel):
+    print(Event.BTN1_PRESS.value)
+
+def b2_press(_channel):
+    print(Event.BTN2_PRESS.value)
+
+def b3_press(_channel):
+    print(Event.BTN3_PRESS.value)
+
+def js_up(_channel):
+    print(Event.JS_UP.value)
+
+def js_down(_channel):
+    print(Event.JS_DOWN.value)
+
+def js_left(_channel):
+    print(Event.JS_LEFT.value)
+
+def js_right(_channel):
+    print(Event.JS_RIGHT.value)
+
+def js_pressed(_channel):
+    print(Event.JS_PRESSED.value)
     
     # time.sleep(0.01)
 def module_init():
@@ -58,7 +103,23 @@ def module_init():
     GPIO.setup(DC_PIN, GPIO.OUT)
     GPIO.setup(CS_PIN, GPIO.OUT)
     GPIO.setup(BL_PIN, GPIO.OUT)
+    GPIO.setup(JS_UP_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Input with pull-up
+    GPIO.setup(JS_DOWN_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Input with pull-up
+    GPIO.setup(JS_LEFT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Input with pull-up
+    GPIO.setup(JS_RIGHT_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Input with pull-up
+    GPIO.setup(JS_PRESSED_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Input with pull-up
+    GPIO.setup(BTN1_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Input with pull-up
+    GPIO.setup(BTN2_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Input with pull-up
+    GPIO.setup(BTN3_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP) # Input with pull-up
 
+    GPIO.add_event_detect(BTN1_PIN, GPIO.RISING, callback=b1_press, bouncetime=200)
+    GPIO.add_event_detect(BTN2_PIN, GPIO.RISING, callback=b2_press, bouncetime=200)
+    GPIO.add_event_detect(BTN3_PIN, GPIO.RISING, callback=b3_press, bouncetime=200)
+    GPIO.add_event_detect(JS_LEFT_PIN, GPIO.RISING, callback=js_left, bouncetime=200)
+    GPIO.add_event_detect(JS_RIGHT_PIN, GPIO.RISING, callback=js_right, bouncetime=200)
+    GPIO.add_event_detect(JS_UP_PIN, GPIO.RISING, callback=js_up, bouncetime=200)
+    GPIO.add_event_detect(JS_DOWN_PIN, GPIO.RISING, callback=js_down, bouncetime=200)
+    GPIO.add_event_detect(JS_PRESSED_PIN, GPIO.RISING, callback=js_pressed, bouncetime=200)
     
     # SPI.max_speed_hz = 2000000
     # SPI.mode = 0b00
@@ -194,15 +255,22 @@ class SH1106(object):
             #print "%d",_buffer[i:i+4096]
 
 if __name__ == '__main__':
-    text = sys.argv[1]
-
     disp = SH1106()
     disp.Init()
     disp.clear()
 
-    font10 = ImageFont.truetype('/usr/local/etc/Font.ttf',13)
-    image = Image.new('1', (disp.width, disp.height), "WHITE")
-    draw = ImageDraw.Draw(image)
+    font10 = ImageFont.truetype('./Font.ttf',13)
+    
+    while True:
+        for line in sys.stdin:
+            text = line.strip()
+            if text == "PROIVDER_DISPLAY_CLEAR":
+                disp.clear()
+                continue
+            else:
+                image = Image.new('1', (disp.width, disp.height), "WHITE")
+                draw = ImageDraw.Draw(image)
 
-    draw.text((5,0), text, font = font10, fill = 0)
-    disp.ShowImage(disp.getbuffer(image))
+                draw.text((5,0), text, font = font10, fill = 0)
+                disp.ShowImage(disp.getbuffer(image))
+                
