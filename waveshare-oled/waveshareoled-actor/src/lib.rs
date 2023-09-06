@@ -14,21 +14,21 @@ struct WaveshareoledActor {}
 #[async_trait]
 impl HttpServer for WaveshareoledActor {
     async fn handle_request(&self, ctx: &Context, req: &HttpRequest) -> RpcResult<HttpResponse> {
-        let resp = if req.path.trim() == "/clear" {
-            WaveshareoledSender::new().clear(ctx).await
-        } else {
-            WaveshareoledSender::new()
-                .draw_message(
-                    ctx,
-                    &DrawMessageInput {
-                        message: req.path.clone(),
-                    },
-                )
-                .await
-        };
-
-        let (body, status_code) = match resp {
-            Ok(v) => (json!({ "response": v }), 200),
+        let censor_filter = censor::Censor::Standard + censor::Censor::Sex;
+        let name = censor_filter.censor(req.path.trim_start_matches('/'));
+        let (body, status_code) = match WaveshareoledSender::new()
+            .draw_message(
+                ctx,
+                &DrawMessageInput {
+                    message: format!("Hello, {name}, I am Roman!",),
+                },
+            )
+            .await
+        {
+            Ok(v) => (
+                json!({ "response": "Come try out Cosmonic! https://app.cosmonic.com" }),
+                200,
+            ),
             // Ensure we properly return database errors as server errors
             Err(e) => (json!({ "error": e.to_string() }), 500),
         };
@@ -39,14 +39,28 @@ impl HttpServer for WaveshareoledActor {
 
 #[async_trait]
 impl WaveshareSubscriber for WaveshareoledActor {
-    async fn handle_event(&self, ctx: &Context, arg: &Event) -> RpcResult<()> {
-        WaveshareoledSender::new()
-            .draw_message(
-                ctx,
-                &DrawMessageInput {
-                    message: format!("I got event {arg}"),
-                },
-            )
-            .await
+    async fn handle_event(&self, ctx: &Context, evt: &Event) -> RpcResult<()> {
+        match evt.as_str() {
+            "button2" => {
+                WaveshareoledSender::new()
+                    .draw_message(
+                        ctx,
+                        &DrawMessageInput {
+                            message: format!("Hello, I'm Roman!"),
+                        },
+                    )
+                    .await
+            }
+            _ => {
+                WaveshareoledSender::new()
+                    .draw_message(
+                        ctx,
+                        &DrawMessageInput {
+                            message: format!("Hello, I'm Roman!\nYou pressed {evt}"),
+                        },
+                    )
+                    .await
+            }
+        }
     }
 }

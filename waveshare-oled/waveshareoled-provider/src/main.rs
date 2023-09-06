@@ -131,16 +131,23 @@ async fn main() -> anyhow::Result<()> {
     let event_handle: JoinHandle<anyhow::Result<()>> = spawn_blocking({
         let event_tx = event_tx.clone();
         move || loop {
-            let (pin, _lvl) = gpio
-                .poll_interrupts(
-                    &[
-                        &btn1, &btn2, &btn3, &js_left, &js_up, &js_right, &js_down, &js_press,
-                    ],
-                    false,
-                    None,
-                )
-                .context("failed to poll")?
-                .context("poll returned unexpectedly")?;
+            let pin = match gpio.poll_interrupts(
+                &[
+                    &btn1, &btn2, &btn3, &js_left, &js_up, &js_right, &js_down, &js_press,
+                ],
+                false,
+                None,
+            ) {
+                Ok(Some((pin, _lvl))) => pin,
+                Ok(None) => {
+                    error!("poll returned unexpectedly");
+                    continue;
+                }
+                Err(err) => {
+                    error!("failed to poll: {err:?}");
+                    continue;
+                }
+            };
             // TODO: Debounce
             let event = if pin == btn1 {
                 WrappedEvent::Button1Press
@@ -162,7 +169,9 @@ async fn main() -> anyhow::Result<()> {
                 error!("oopsie, unknown button pressed");
                 continue;
             };
-            event_tx.send(event).context("failed to send event")?;
+            if let Err(err) = event_tx.send(event) {
+                error!("failed to send event: {err:?}")
+            }
         }
     });
 
@@ -174,15 +183,20 @@ async fn main() -> anyhow::Result<()> {
             .build();
         loop {
             match display_rx.recv().await.context("display channel closed")? {
-                DisplayCommand::Clear => display.clear(),
+                DisplayCommand::Clear => {
+                    display.clear();
+                    Text::with_baseline("", Point::zero(), text_style, Baseline::Top)
+                        .draw(&mut display)
+                        .context("failed to write text")?;
+                }
                 DisplayCommand::Text(text) => {
                     display.clear();
                     Text::with_baseline(&text, Point::zero(), text_style, Baseline::Top)
                         .draw(&mut display)
                         .context("failed to write text")?;
-                    display.flush().expect("failed to flush");
                 }
             }
+            display.flush().expect("failed to flush");
         }
     });
 
@@ -262,7 +276,6 @@ impl ProviderHandler for WaveshareoledProvider {
                         }
                         Err(e) => {
                             debug!("Error receiving event: {:?}", e);
-                            break;
                         }
                     }
                 }
