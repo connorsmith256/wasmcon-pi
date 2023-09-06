@@ -1,50 +1,201 @@
 //! Implementation for cosmonic:waveshareoled
 //!
 
-mod phony;
-
 use std::collections::HashMap;
-use std::{convert::Infallible, sync::Arc};
+use std::convert::Infallible;
+use std::sync::Arc;
 
-use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
+use anyhow::{anyhow, ensure, Context as _};
+use futures::try_join;
+use rppal::gpio::{Gpio, OutputPin, Trigger};
+use rppal::hal::Delay;
+use rppal::spi::{self, Spi};
+use sh1106::prelude::*;
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::task::{spawn, spawn_blocking, JoinHandle};
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, instrument};
-
 use wasmbus_rpc::{core::LinkDefinition, provider::prelude::*};
 use waveshareoled_interface::{
     DrawMessageInput, WaveshareSubscriber, WaveshareSubscriberSender, Waveshareoled,
     WaveshareoledReceiver, WrappedEvent,
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+enum DisplayCommand {
+    Clear,
+    Text(String),
+}
+
+fn command(spi: &mut Spi, dc: &mut OutputPin, byte: u8) -> anyhow::Result<()> {
+    dc.set_low();
+    let n = spi.write(&[byte]).context("failed to write byte to SPI")?;
+    ensure!(n == 1, "short write");
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let hd = load_host_data()?;
 
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()?;
-    let (wrapper, sender) = match runtime.block_on(phony::Wrapper::new()) {
-        Ok(v) => v,
-        Err(e) => {
-            eprintln!("Error setting up lib: {}", e);
-            return Ok(());
-        }
-    };
+    let mut spi = Spi::new(
+        spi::Bus::Spi0,
+        spi::SlaveSelect::Ss0,
+        10000000,
+        spi::Mode::Mode0,
+    )
+    .context("failed to connect to SPI")?;
 
-    runtime.block_on(async {
-        provider_run(
-            WaveshareoledProvider {
-                wrapper: Arc::new(RwLock::new(wrapper)),
-                sender,
-                actor_subscribers: Default::default(),
-            },
-            hd,
-            Some("Waveshareoled Provider".to_string()),
-        )
-        .await
-    })?;
-    // in the unlikely case there are any stuck threads,
-    // close them so the process has a clean exit
-    runtime.shutdown_timeout(core::time::Duration::from_secs(10));
+    let gpio = Gpio::new().context("failed to get GPIO")?;
+
+    let _bl = gpio.get(18).context("failed to get BL")?;
+    let btn1 = gpio.get(21).context("failed to get BTN1")?;
+    let btn2 = gpio.get(20).context("failed to get BTN2")?;
+    let btn3 = gpio.get(16).context("failed to get BTN3")?;
+    let cs = gpio.get(8).context("failed to get CS")?;
+    let dc = gpio.get(24).context("failed to get DC")?;
+    let js_down = gpio.get(19).context("failed to get Joystick down")?;
+    let js_left = gpio.get(5).context("failed to get Joystick left")?;
+    let js_press = gpio.get(13).context("failed to get Joystick press")?;
+    let js_right = gpio.get(26).context("failed to get Joystick right")?;
+    let js_up = gpio.get(6).context("failed to get Joystick up")?;
+    let rst = gpio.get(25).context("failed to get RST")?;
+
+    let mut btn1 = btn1.into_input_pullup();
+    let mut btn2 = btn2.into_input_pullup();
+    let mut btn3 = btn3.into_input_pullup();
+    let cs = cs.into_output();
+    let mut dc = dc.into_output_low();
+    let mut js_down = js_down.into_input_pullup();
+    let mut js_left = js_left.into_input_pullup();
+    let mut js_press = js_press.into_input_pullup();
+    let mut js_right = js_right.into_input_pullup();
+    let mut js_up = js_up.into_input_pullup();
+    let mut rst = rst.into_output();
+
+    command(&mut spi, &mut dc, 0xAE)?; // turn off oled panel
+    command(&mut spi, &mut dc, 0x02)?; // -set low column address
+    command(&mut spi, &mut dc, 0x10)?; // -set high column address
+    command(&mut spi, &mut dc, 0x40)?; // set start line address  Set Mapping RAM Display Start Line (0x00~0x3F)
+    command(&mut spi, &mut dc, 0x81)?; // set contrast control register
+    command(&mut spi, &mut dc, 0xA0)?; // Set SEG/Column Mapping
+    command(&mut spi, &mut dc, 0xC0)?; // Set COM/Row Scan Direction
+    command(&mut spi, &mut dc, 0xA6)?; // set normal display
+    command(&mut spi, &mut dc, 0xA8)?; // set multiplex ratio(1 to 64)
+    command(&mut spi, &mut dc, 0x3F)?; // 1/64 duty
+    command(&mut spi, &mut dc, 0xD3)?; // set display offset    Shift Mapping RAM Counter (0x00~0x3F)
+    command(&mut spi, &mut dc, 0x00)?; // not offset
+    command(&mut spi, &mut dc, 0xd5)?; // set display clock divide ratio/oscillator frequency
+    command(&mut spi, &mut dc, 0x80)?; // set divide ratio, Set Clock as 100 Frames/Sec
+    command(&mut spi, &mut dc, 0xD9)?; // set pre-charge period
+    command(&mut spi, &mut dc, 0xF1)?; // Set Pre-Charge as 15 Clocks & Discharge as 1 Clock
+    command(&mut spi, &mut dc, 0xDA)?; // set com pins hardware configuration
+    command(&mut spi, &mut dc, 0x12)?;
+    command(&mut spi, &mut dc, 0xDB)?; // set vcomh
+    command(&mut spi, &mut dc, 0x40)?; // Set VCOM Deselect Level
+    command(&mut spi, &mut dc, 0x20)?; // Set Page Addressing Mode (0x00/0x01/0x02)
+    command(&mut spi, &mut dc, 0x02)?; //
+    command(&mut spi, &mut dc, 0xA4)?; //  Disable Entire Display On (0xa4/0xa5)
+    command(&mut spi, &mut dc, 0xA6)?; //  Disable Inverse Display On (0xa6/a7)
+
+    sleep(Duration::from_millis(100)).await;
+    command(&mut spi, &mut dc, 0xAF)?; // turn on oled panel
+
+    let mut display: GraphicsMode<SpiInterface<Spi, OutputPin, OutputPin>> =
+        sh1106::Builder::new().connect_spi(spi, dc, cs).into();
+    display
+        .reset(&mut rst, &mut Delay::new())
+        .expect("failed to reset");
+    display.init().unwrap();
+    display.flush().unwrap();
+
+    for pin in [
+        &mut btn1,
+        &mut btn2,
+        &mut btn3,
+        &mut js_left,
+        &mut js_up,
+        &mut js_right,
+        &mut js_down,
+        &mut js_press,
+    ] {
+        pin.set_interrupt(Trigger::RisingEdge)
+            .context("failed to set interrupt on BTN1")?;
+    }
+
+    let (event_tx, _) = broadcast::channel(1000);
+    let event_handle: JoinHandle<anyhow::Result<()>> = spawn_blocking({
+        let event_tx = event_tx.clone();
+        move || loop {
+            let (pin, _lvl) = gpio
+                .poll_interrupts(
+                    &[
+                        &btn1, &btn2, &btn3, &js_left, &js_up, &js_right, &js_down, &js_press,
+                    ],
+                    false,
+                    None,
+                )
+                .context("failed to poll")?
+                .context("poll returned unexpectedly")?;
+            let event = if pin == btn1 {
+                WrappedEvent::Button1Press
+            } else if pin == btn2 {
+                WrappedEvent::Button2Press
+            } else if pin == btn3 {
+                WrappedEvent::Button3Press
+            } else if pin == js_left {
+                WrappedEvent::JoystickLeft
+            } else if pin == js_up {
+                WrappedEvent::JoystickUp
+            } else if pin == js_right {
+                WrappedEvent::JoystickRight
+            } else if pin == js_down {
+                WrappedEvent::JoystickDown
+            } else if pin == js_press {
+                WrappedEvent::JoystickPressed
+            } else {
+                error!("oopsie, unknown button pressed");
+                continue;
+            };
+            event_tx.send(event).context("failed to send event")?;
+        }
+    });
+
+    let (display_tx, mut display_rx) = mpsc::channel(1000);
+    let display_handle: JoinHandle<anyhow::Result<()>> = spawn(async move {
+        loop {
+            match display_rx.recv().await.context("display channel closed")? {
+                DisplayCommand::Clear => todo!(),
+                DisplayCommand::Text(_text) => todo!(),
+            }
+        }
+    });
+
+    provider_run(
+        WaveshareoledProvider {
+            display: display_tx,
+            events: event_tx,
+            actor_subscribers: Default::default(),
+        },
+        hd,
+        Some("Waveshareoled Provider".to_string()),
+    )
+    .await
+    .map_err(|e| anyhow!(e.to_string()).context("failed to run provider"))?;
+
+    try_join!(
+        async {
+            event_handle
+                .await
+                .context("failed to await event handle")?
+                .context("event handle thread failed")
+        },
+        async {
+            display_handle
+                .await
+                .context("failed to await display handle")?
+                .context("display handle thread failed")
+        }
+    )?;
 
     eprintln!("Waveshareoled provider exiting");
     Ok(())
@@ -54,8 +205,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[derive(Clone, Provider)]
 #[services(Waveshareoled)]
 struct WaveshareoledProvider {
-    wrapper: Arc<RwLock<phony::Wrapper>>,
-    sender: tokio::sync::broadcast::Sender<WrappedEvent>,
+    display: mpsc::Sender<DisplayCommand>,
+    events: broadcast::Sender<WrappedEvent>,
     actor_subscribers: Arc<RwLock<HashMap<String, JoinHandle<()>>>>,
 }
 // use default implementations of provider message handlers
@@ -73,15 +224,15 @@ impl ProviderHandler for WaveshareoledProvider {
         debug!("putting link for actor {:?}", ld);
 
         let mut actors = self.actor_subscribers.write().await;
-        let mut rx = self.sender.subscribe();
+        let mut events = self.events.subscribe();
         let owned_ld = ld.to_owned();
         actors.insert(
             ld.actor_id.clone(),
-            tokio::spawn(async move {
+            spawn(async move {
                 let default_context = Context::default();
                 let sender = WaveshareSubscriberSender::for_actor(&owned_ld);
                 loop {
-                    match rx.recv().await {
+                    match events.recv().await {
                         Ok(evt) => {
                             debug!("Received event: {:?}", evt);
 
@@ -131,20 +282,18 @@ impl Waveshareoled for WaveshareoledProvider {
     ) -> RpcResult<()> {
         debug!("Drawing message: {:?}", input);
 
-        self.wrapper
-            .write()
+        self.display
+            .send(DisplayCommand::Text(input.message.clone()))
             .await
-            .draw_message(&input.message)
-            .await
-            .map_err(|e| RpcError::Other(e.to_string()))
+            .map_err(|e| RpcError::Other(e.to_string()))?;
+        Ok(())
     }
 
     async fn clear(&self, _ctx: &wasmbus_rpc::provider::prelude::Context) -> RpcResult<()> {
-        self.wrapper
-            .write()
+        self.display
+            .send(DisplayCommand::Clear)
             .await
-            .draw_message("PROIVDER_DISPLAY_CLEAR")
-            .await
-            .map_err(|e| RpcError::Other(e.to_string()))
+            .map_err(|e| RpcError::Other(e.to_string()))?;
+        Ok(())
     }
 }

@@ -6,9 +6,12 @@ edition = "2021"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
+embedded-graphics = { workspace = true }
 futures = { workspace = true }
 rand = { workspace = true }
+rppal = { workspace = true }
 serde = { workspace = true }
+sh1106 = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 wasmbus-rpc = { workspace = true }

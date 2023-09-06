@@ -6,7 +6,7 @@ license = "Apache-2.0"
 
 [workspace]
 members = [
-    "waveshareoled-actor",
+    #"waveshareoled-actor",
     "waveshareoled-interface/rust",
     "waveshareoled-provider",
 ]
@@ -20,6 +20,9 @@ rand = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_bytes = "0.11"
 serde_json ="1.0"
+embedded-graphics = "0.8"
+rppal = { version = "0.14", features = ["hal"] }
+sh1106 = "0.5"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 wasmbus-rpc = { version = "0.14", features = ["otel"] }
