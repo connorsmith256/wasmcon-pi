@@ -1,4 +1,5 @@
 [toolchain]
 targets = [
     "aarch64-unknown-linux-musl",
+    "wasm32-wasi",
 ]

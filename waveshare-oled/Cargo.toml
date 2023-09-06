@@ -6,7 +6,7 @@ license = "Apache-2.0"
 
 [workspace]
 members = [
-    #"waveshareoled-actor",
+    "waveshareoled-actor",
     "waveshareoled-interface/rust",
     "waveshareoled-provider",
 ]

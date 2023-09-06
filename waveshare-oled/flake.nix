@@ -1,11 +1,20 @@
 {
   inputs.nixify.url = github:rvolosatovs/nixify;
+  inputs.wash.url = github:wasmcloud/wash/v0.20.1;
 
-  outputs = {nixify, ...}:
+  outputs = {
+    nixify,
+    wash,
+    ...
+  }:
     with nixify.lib;
       rust.mkFlake {
         src = ./.;
         name = "waveshareoled";
+
+        overlays = [
+          wash.overlays.default
+        ];
 
         build.packages = [
           "waveshareoled-provider"
@@ -34,6 +43,7 @@
           extendDerivations {
             buildInputs = [
               pkgs.protobuf # prost build dependency
+              pkgs.wash
             ];
           }
           devShells;

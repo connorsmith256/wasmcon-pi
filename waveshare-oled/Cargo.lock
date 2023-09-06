@@ -2938,6 +2938,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "wasmcloud-interface-httpserver"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "424c4bd21e2494711997a2a9e07aa4d14ff2c4c4db3e08a0f6099345544383c5"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "wasmbus-rpc",
+ "weld-codegen",
+]
+
+[[package]]
 name = "wasmparser"
 version = "0.107.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2945,6 +2959,20 @@ checksum = "29e3ac9b780c7dda0cac7a52a5d6d2d6707cc6e3451c9db209b6c758f40d7acb"
 dependencies = [
  "indexmap 1.9.3",
  "semver",
+]
+
+[[package]]
+name = "waveshareoled-actor"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "serde",
+ "serde_bytes",
+ "serde_json",
+ "wasmbus-rpc",
+ "wasmcloud-interface-httpserver",
+ "waveshareoled-interface",
 ]
 
 [[package]]
