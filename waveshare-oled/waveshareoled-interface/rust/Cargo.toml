@@ -2,17 +2,18 @@
 name = "waveshareoled-interface"
 version = "0.1.0"
 description = "Interface library for the waveshareoled capability, "
-authors = [ "connor@cosmonic.com" ]
+authors = ["connor@cosmonic.com"]
 edition = "2021"
 license = "Apache-2.0"
 
 # when publishing to crates.io, freeze src by omitting build.rs
-exclude = [ "build.rs" ]
+exclude = ["build.rs"]
 
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 serde = { workspace = true }
 serde_bytes = { workspace = true }

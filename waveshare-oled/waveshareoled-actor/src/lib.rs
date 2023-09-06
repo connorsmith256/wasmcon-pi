@@ -1,22 +1,31 @@
 use serde_json::json;
 use wasmbus_rpc::actor::prelude::*;
 use wasmcloud_interface_httpserver::{HttpRequest, HttpResponse, HttpServer, HttpServerReceiver};
-use waveshareoled_interface::{Waveshareoled, WaveshareoledSender, DrawMessageInput};
+use waveshareoled_interface::{
+    DrawMessageInput, Event, WaveshareSubscriber, WaveshareSubscriberReceiver, Waveshareoled,
+    WaveshareoledSender,
+};
 
 #[derive(Debug, Default, Actor, HealthResponder)]
-#[services(Actor, HttpServer)]
-struct WaveshareoledActorActor {}
+#[services(Actor, HttpServer, WaveshareSubscriber)]
+struct WaveshareoledActor {}
 
 /// Implementation of HttpServer trait methods
 #[async_trait]
-impl HttpServer for WaveshareoledActorActor {
+impl HttpServer for WaveshareoledActor {
     async fn handle_request(&self, ctx: &Context, req: &HttpRequest) -> RpcResult<HttpResponse> {
-        let resp = WaveshareoledSender::new().draw_message(
-            ctx,
-            &DrawMessageInput {
-                message: req.path.clone(),
-            },
-        ).await;
+        let resp = if req.path.trim() == "/clear" {
+            WaveshareoledSender::new().clear(ctx).await
+        } else {
+            WaveshareoledSender::new()
+                .draw_message(
+                    ctx,
+                    &DrawMessageInput {
+                        message: req.path.clone(),
+                    },
+                )
+                .await
+        };
 
         let (body, status_code) = match resp {
             Ok(v) => (json!({ "response": v }), 200),
@@ -28,3 +37,16 @@ impl HttpServer for WaveshareoledActorActor {
     }
 }
 
+#[async_trait]
+impl WaveshareSubscriber for WaveshareoledActor {
+    async fn handle_event(&self, ctx: &Context, arg: &Event) -> RpcResult<()> {
+        WaveshareoledSender::new()
+            .draw_message(
+                ctx,
+                &DrawMessageInput {
+                    message: format!("I got event {arg}"),
+                },
+            )
+            .await
+    }
+}

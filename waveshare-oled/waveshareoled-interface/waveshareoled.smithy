@@ -13,11 +13,18 @@ use org.wasmcloud.model#U64
 /// calculates the factorial of its whole number parameter.
 @wasmbus(
     contractId: "cosmonic:waveshareoled",
-    actorReceive: true,
     providerReceive: true )
 service Waveshareoled {
   version: "0.1",
-  operations: [ DrawMessage ]
+  operations: [ DrawMessage, Clear ]
+}
+
+@wasmbus(
+    contractId: "cosmonic:waveshareoled",
+    actorReceive: true)
+service WaveshareSubscriber {
+  version: "0.1",
+  operations: [ HandleEvent ]
 }
 
 /// Draws the given message on the OLED display
@@ -29,3 +36,11 @@ structure DrawMessageInput {
   @required
   message: String,
 }
+
+operation Clear {}
+
+operation HandleEvent {
+  input: Event,
+}
+
+string Event
